@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from scipy.signal import butter, filtfilt
 import pywt
+#import sklearn
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score
 
@@ -39,9 +40,9 @@ def preprocess_signal(signal, fs=360, lowcut=0.5, highcut=40):
 
     # Normalization
     # Normalize to range 0 to 1
-    normalized_signal = (filtered_signal - np.min(filtered_signal)) / (
-                np.max(filtered_signal) - np.min(filtered_signal))
+    normalized_signal = (filtered_signal - np.min(filtered_signal)) / (np.max(filtered_signal) - np.min(filtered_signal))
     return normalized_signal
+
 
 
 # Preprocess signals
@@ -57,6 +58,24 @@ print(normal_train)
 print("")
 print(normal_test)
 
+def extract_wavelet_features(signal, wavelet='db4'):
 
 
+    coeffs = pywt.wavedec(signal, wavelet, level=9) #level =9
+
+    # Extract coefficients
+    approximation = coeffs[0]  # cA_9
+    details = coeffs[1:]  # [cD_9, cD_8, cD_7,cD_6, cD_5, cD_4,cD_3, cD_2, cD_1]
+    print(f"approximation :{approximation}")
+    print(f"details :{details}")
+   
+    features_extraction = coeffs[1:8]
+    return features_extraction
+
+
+# Extract features
+lbbb_train_features = extract_wavelet_features(lbbb_train)
+lbbb_test_features = extract_wavelet_features(lbbb_test)
+normal_train = extract_wavelet_features(normal_train)
+normal_test_features = extract_wavelet_features(normal_test)
 
