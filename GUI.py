@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, filedialog
 import numpy as np
 from scipy.signal import butter, filtfilt
 from sklearn.neighbors import KNeighborsClassifier
@@ -8,7 +8,7 @@ from sklearn.svm import SVC
 import pywt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
+import os
 
 # Preprocessing functions
 def preprocess_signal(signal, fs=360, lowcut=0.5, highcut=40):
@@ -19,45 +19,81 @@ def preprocess_signal(signal, fs=360, lowcut=0.5, highcut=40):
     b, a = butter(4, [low, high], btype='band')
     filtered_signal = filtfilt(b, a, signal)
     normalized_signal = (filtered_signal - np.min(filtered_signal)) / (
-                np.max(filtered_signal) - np.min(filtered_signal))
+            np.max(filtered_signal) - np.min(filtered_signal))
     return normalized_signal
-
 
 def extract_wavelet_features(signal, wavelet='db4', level=9):
     coeffs = pywt.wavedec(signal, wavelet, level=level)
     features = []
-    for coef in coeffs:
-        features.append(np.mean(coef))
-        features.append(np.std(coef))
+    for coeff in coeffs[1:8]:
+        features.extend([np.mean(coeff), np.std(coeff)])
     return np.array(features)
 
+def load_data(file_path):
+    try:
+        array_of_arrays = []
+        with open(file_path, 'r') as file:
+            lines = file.readlines()
+            for line in lines:
+                line = line.strip()
+                if line:
+                    values = [float(value) for value in line.split('|') if value]
+                    array_of_arrays.append(values)
+        return array_of_arrays
+    except Exception as e:
+        messagebox.showerror("Error", f"Error reading file {file_path}: {e}")
+        return []
 
-# Dummy training setup (replace with actual training process)
-def train_models():
-    normal_signals = [np.sin(np.linspace(0, 2 * np.pi, 300)) for _ in range(50)]
-    lbbb_signals = [np.cos(np.linspace(0, 2 * np.pi, 300)) for _ in range(50)]
-    normal_features = [extract_wavelet_features(preprocess_signal(sig)) for sig in normal_signals]
-    lbbb_features = [extract_wavelet_features(preprocess_signal(sig)) for sig in lbbb_signals]
-    X = np.vstack((normal_features, lbbb_features))
-    y = np.array([0] * len(normal_features) + [1] * len(lbbb_features))
-
+# Training models
+def train_models(train_data):
+    features, labels = train_data
     knn = KNeighborsClassifier(n_neighbors=3)
-    knn.fit(X, y)
+    knn.fit(features, labels)
 
     decision_tree = DecisionTreeClassifier(max_depth=4)
-    decision_tree.fit(X, y)
+    decision_tree.fit(features, labels)
 
-    svm = SVC(kernel='linear', probability=True,C=3)
-    svm.fit(X, y)
+    svm = SVC(kernel='linear', probability=True, C=3)
+    svm.fit(features, labels)
 
     return {"KNN": knn, "Decision Tree": decision_tree, "SVM": svm}
 
+# Global models
+models = {}
 
-# Load trained models
-models = train_models()
+def load_and_train():
+    try:
+        train_file = filedialog.askopenfilename(title="Select Training Dataset")
+        test_file = filedialog.askopenfilename(title="Select Testing Dataset")
 
+        if not train_file or not test_file:
+            messagebox.showwarning("Warning", "Please select both train and test files.")
+            return
 
-# GUI Functions
+        # Load datasets
+        normal_train = load_data(train_file)
+        normal_test = load_data(test_file)
+
+        # Preprocess datasets
+        preprocessed_train = [preprocess_signal(signal) for signal in normal_train]
+        preprocessed_test = [preprocess_signal(signal) for signal in normal_test]
+
+        # Extract features
+        features_train = [extract_wavelet_features(signal) for signal in preprocessed_train]
+        features_test = [extract_wavelet_features(signal) for signal in preprocessed_test]
+
+        # Combine labels
+        labels_train = [0] * len(preprocessed_train[:len(preprocessed_train)//2]) + [1] * len(preprocessed_train[len(preprocessed_train)//2:])
+        labels_test = [0] * len(preprocessed_test[:len(preprocessed_test)//2]) + [1] * len(preprocessed_test[len(preprocessed_test)//2:])
+
+        # Train models
+        global models
+        models = train_models((features_train, labels_train))
+
+        messagebox.showinfo("Success", "Models trained successfully!")
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred during training: {e}")
+
 def predict_signal():
     try:
         signal_input = signal_entry.get()
@@ -69,7 +105,11 @@ def predict_signal():
 
         # Get the selected model
         selected_model = classification_option.get()
-        model = models[selected_model]
+        model = models.get(selected_model)
+
+        if not model:
+            messagebox.showerror("Error", "Models are not trained. Load data and train models first.")
+            return
 
         # Predict using the selected model
         prediction = model.predict([features])[0]
@@ -80,7 +120,6 @@ def predict_signal():
         draw_signal(signal_values)
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
-
 
 def draw_signal(signal):
     # Clear existing plots
@@ -98,7 +137,6 @@ def draw_signal(signal):
     # Add the plot to the GUI
     canvas = FigureCanvasTkAgg(fig, canvas_frame)
     canvas.get_tk_widget().pack()
-
 
 # GUI setup
 root = tk.Tk()
@@ -143,7 +181,12 @@ button_frame.pack(pady=20)
 predict_button = tk.Button(
     button_frame, text="Predict", font=("Helvetica", 12, "bold"), bg="#0078D7", fg="white", command=predict_signal
 )
-predict_button.pack()
+predict_button.pack(side="left", padx=10)
+
+train_button = tk.Button(
+    button_frame, text="Load Data & Train", font=("Helvetica", 12, "bold"), bg="#28A745", fg="white", command=load_and_train
+)
+train_button.pack(side="left", padx=10)
 
 # Canvas for Signal Plot
 canvas_frame = tk.Frame(root, bg="white")
